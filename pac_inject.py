@@ -33,7 +33,7 @@ def parse(data):
     return records, cursor
 
 
-def inject(ch, arc, replacement, member):
+def inject(ch, arc, replacement, member, preserve_layout=True):
     records, end = parse(ch)
     targets = [r for r in records if r[1] == member.encode('ascii')]
     if len(targets) != 1:
@@ -53,6 +53,21 @@ def inject(ch, arc, replacement, member):
     for record in records:
         if record != target and record[3] < start + old_span and record[3] + record[4] > start:
             raise ValueError('Target allocation overlaps another member')
+    if preserve_layout:
+        if len(replacement) > old_size:
+            raise ValueError('Replacement exceeds existing allocation; use --compact to rebuild')
+        out = bytearray(ch)
+        out[start:start + old_size] = replacement + bytes(old_size - len(replacement))
+        # Retain allocation sizes as well as offsets: the nested PAC describes its own length.
+        checked, _ = parse(out)
+        for before, after in zip(records, checked):
+            assert before == after
+            if before != target:
+                assert ch[before[3]:before[3] + before[4]] == out[after[3]:after[3] + after[4]]
+        assert out[start:start + len(replacement)] == replacement
+        assert out[:start] == ch[:start] and out[start + old_size:] == ch[start + old_size:]
+        report = dict(member=member, mode='preserve-layout', replacement_bytes=len(replacement), replacement_sha256=hashlib.sha256(replacement).hexdigest(), unchanged_members_verified=len(records)-1, sector_delta=0, arc_table_offset=matches[0], original_ch_bytes=len(ch), output_ch_bytes=len(out), arc_bytes=len(arc), arc_unchanged=True)
+        return bytes(out), arc, report
     delta = new_span - old_span
     out = bytearray(ch[:start] + replacement + bytes(new_span - len(replacement)) + ch[start + old_span:])
     out[8:12] = (len(out) - 16384).to_bytes(4, 'little')
@@ -88,8 +103,9 @@ def main():
     parser.add_argument('--replacement', type=Path, required=True)
     parser.add_argument('--member', default='00010201')
     parser.add_argument('--output', type=Path, required=True)
+    parser.add_argument('--compact', action='store_true', help='Rebuild offsets instead of preserving the original allocation')
     args = parser.parse_args()
-    ch, arc, report = inject(args.ch.read_bytes(), args.arc.read_bytes(), args.replacement.read_bytes(), args.member)
+    ch, arc, report = inject(args.ch.read_bytes(), args.arc.read_bytes(), args.replacement.read_bytes(), args.member, preserve_layout=not args.compact)
     args.output.mkdir(parents=True, exist_ok=True)
     paths = [args.output / n for n in ['ch.pac', 'plistpsp.arc', 'verification.json']]
     if any(p.exists() for p in paths):
