@@ -1,0 +1,11 @@
+{
+  "member": "00010201",
+  "replacement_bytes": 145408,
+  "replacement_sha256": "808c7063dab9632530fbf5be3448c518bc73aa9583b5f68138809100eee49789",
+  "unchanged_members_verified": 46,
+  "sector_delta": -1,
+  "arc_table_offset": 90236,
+  "original_ch_bytes": 6746112,
+  "output_ch_bytes": 6744064,
+  "arc_bytes": 96028
+}
